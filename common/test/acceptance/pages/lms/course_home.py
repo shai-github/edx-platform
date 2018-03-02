@@ -22,7 +22,8 @@ class CourseHomePage(CoursePage):
     HEADER_RESUME_COURSE_SELECTOR = '.page-header .action-resume-course'
 
     def is_browser_on_page(self):
-        return self.q(css='.course-outline').present
+        return self.q(css='.course-outline-visualprogress').present
+
 
     def __init__(self, browser, course_id):
         super(CourseHomePage, self).__init__(browser, course_id)
@@ -81,7 +82,7 @@ class CourseOutlinePage(PageObject):
     url = None
 
     SECTION_SELECTOR = '.outline-item.section:nth-of-type({0})'
-    SECTION_TITLES_SELECTOR = '.section-name h3'
+    SECTION_TITLES_SELECTOR = '.outline-item.section'
     SUBSECTION_SELECTOR = SECTION_SELECTOR + ' .subsection:nth-of-type({1}) .outline-item'
     SUBSECTION_TITLES_SELECTOR = SECTION_SELECTOR + ' .subsection .subsection-title .subsection-title-name'
     OUTLINE_RESUME_COURSE_SELECTOR = '.outline-item .resume-right'
@@ -89,6 +90,8 @@ class CourseOutlinePage(PageObject):
     def __init__(self, browser, parent_page):
         super(CourseOutlinePage, self).__init__(browser)
         self.parent_page = parent_page
+        self._section_selector = '.outline-item.section'
+        self._subsection_selector = '.subsection.accordion'
 
     def is_browser_on_page(self):
         return self.parent_page.is_browser_on_page
@@ -108,21 +111,8 @@ class CourseOutlinePage(PageObject):
 
         You can use these titles in `go_to_section` to navigate to the section.
         """
-        # Dict to store the result
-        outline_dict = OrderedDict()
+        return self._get_outline_structure_as_dictionary()
 
-        section_titles = self._section_titles()
-
-        # Get the section titles for each chapter
-        for sec_index, sec_title in enumerate(section_titles):
-
-            if len(section_titles) < 1:
-                raise ValueError("Could not find subsections for '{0}'".format(sec_title))
-            else:
-                # Add one to convert list index (starts at 0) to CSS index (starts at 1)
-                outline_dict[sec_title] = self._subsection_titles(sec_index + 1)
-
-        return outline_dict
 
     @property
     def num_sections(self):
@@ -165,22 +155,27 @@ class CourseOutlinePage(PageObject):
         Example:
             go_to_section("Week 1", "Lesson 1")
         """
+        self._expand_all_outline_folds()
+
         section_index = self._section_title_to_index(section_title)
-        if section_index is None:
-            raise ValueError("Could not find section '{0}'".format(section_title))
+        sections = self._get_sections_as_selenium_webelements()
+
+        subsection_webelements = self._get_subsections_as_selenium_webelements()
+        subsection_titles = [ self._get_title(sub_webel) for sub_webel in subsection_webelements ]
 
         try:
-            subsection_index = self._subsection_titles(section_index + 1).index(subsection_title)
+            subsection_index = subsection_titles.index(unicode(subsection_title))
         except ValueError:
             raise ValueError("Could not find subsection '{0}' in section '{1}'".format(
                 subsection_title, section_title
             ))
 
-        # Convert list indices (start at zero) to CSS indices (start at 1)
-        subsection_css = self.SUBSECTION_SELECTOR.format(section_index + 1, subsection_index + 1)
+        target_subsection = subsection_webelements[subsection_index]
+        unit_links = target_subsection.find_elements_by_tag_name('a')
 
-        # Click the subsection and ensure that the page finishes reloading
-        self.q(css=subsection_css).first.click()
+        # Click the subsection's first problem and ensure that the page finishes
+        # reloading
+        unit_links[0].click()
 
         self._wait_for_course_section(section_title, subsection_title)
 
@@ -223,7 +218,7 @@ class CourseOutlinePage(PageObject):
         """
         Navigate to courseware using Resume Course button in the header.
         """
-        self.q(css=self.OUTLINE_RESUME_COURSE_SELECTOR).first.click()
+        self.q(css='.btn.btn-primary.action-resume-course').results[0].click()
         courseware_page = CoursewarePage(self.browser, self.parent_page.course_id)
         courseware_page.wait_for_page()
 
@@ -231,17 +226,25 @@ class CourseOutlinePage(PageObject):
         """
         Return a list of all section titles on the page.
         """
-        return self.q(css=self.SECTION_TITLES_SELECTOR).map(lambda el: el.text.strip()).results
+        outline_sections = self.q(css=self._section_selector).results
+        section_titles = [ self._get_title(section) for section in outline_sections ]
+        return section_titles
 
     def _subsection_titles(self, section_index):
         """
         Return a list of all subsection titles on the page
-        for the section at index `section_index` (starts at 1).
+        for the section at index `section_index` (starts at 0).
         """
-        subsection_css = self.SUBSECTION_TITLES_SELECTOR.format(section_index)
-        return self.q(css=subsection_css).map(
-            lambda el: el.get_attribute('innerHTML').strip()
-        ).results
+        self._expand_all_outline_folds()
+
+        outline_sections = self.q(css=self._section_selector).results
+        target_section_on_outline = outline_sections[section_index]
+        section_and_subsection_text = target_section_on_outline.text
+        titles = section_and_subsection_text.split('\n')
+        assert(len(titles) > 1)
+        section_title, subsection_titles = titles[0], titles[1:]
+
+        return subsection_titles
 
     def _wait_for_course_section(self, section_title, subsection_title):
         """
@@ -259,6 +262,52 @@ class CourseOutlinePage(PageObject):
             description="Waiting for course page with section '{0}' and subsection '{1}'".format(section_title, subsection_title)
         )
 
+    def _get_sections_as_selenium_webelements(self):
+        return self.q(css=self._section_selector).results
+
+    def _get_subsections_as_selenium_webelements(self):
+        return self.q(css=self._subsection_selector).results
+    
+    def _get_outline_structure_as_dictionary(self):
+        self._expand_all_outline_folds()
+
+        outline_dict = OrderedDict()
+        outline_sections = self.q(css=self._section_selector).results
+
+        for section in outline_sections:
+            subsections = section.find_elements_by_css_selector(self._subsection_selector)
+            section_title = self._get_title(section)
+            subsection_titles = [self._get_title(subsection) for subsection in subsections]
+            outline_dict[section_title] = subsection_titles
+        
+        return outline_dict
+
+    def _expand_all_outline_folds(self):
+        sections = [ section for section in self.q(css=self._section_selector) ]
+        for section in sections:
+            if not self._is_section_fold_expanded(section):
+                section.click()
+        
+        subsections = [ subsection for subsection in self.q(css=self._subsection_selector) ]
+        for subsection in subsections:
+            if not self._is_subsection_fold_expanded(subsection):
+                subsection.click()
+    
+    def _is_section_fold_expanded(self, section):
+        section_button = section.find_element_by_css_selector('.section-name.accordion-trigger')
+        return self._is_element_aria_expanded(section_button)
+
+    def _is_subsection_fold_expanded(self, subsection):
+        subsection_button = subsection.find_element_by_css_selector('.subsection-text.accordion-trigger')
+        return self._is_element_aria_expanded(subsection_button)
+    
+    @staticmethod
+    def _is_element_aria_expanded(html_element):
+        return html_element.get_attribute('aria-expanded') == u'true'
+
+    @staticmethod
+    def _get_title(outline_element):
+        return outline_element.text.split('\n')[0]
 
 class CourseSearchResultsPage(CoursePage):
     """
