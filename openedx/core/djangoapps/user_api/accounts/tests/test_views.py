@@ -15,14 +15,16 @@ from django.core.urlresolvers import reverse
 from django.test import TestCase
 from django.test.testcases import TransactionTestCase
 from django.test.utils import override_settings
-from mock import patch
+from mock import MagicMock, patch
 from nose.plugins.attrib import attr
 from pytz import UTC
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
 from openedx.core.djangoapps.user_api.accounts import ACCOUNT_VISIBILITY_PREF_KEY
-from openedx.core.djangoapps.user_api.models import UserPreference
+from openedx.core.djangoapps.user_api.accounts.signals import UserRetireMailingsSignal
+from openedx.core.djangoapps.user_api.accounts.views import AccountRetireMailingsView
+from openedx.core.djangoapps.user_api.models import UserPreference, UserOrgTag
 from openedx.core.djangoapps.user_api.preferences.api import set_user_preference
 from openedx.core.djangolib.testing.utils import CacheIsolationTestCase, skip_unless_lms
 from openedx.core.lib.token_utils import JwtBuilder
@@ -918,3 +920,118 @@ class TestAccountDeactivation(TestCase):
             expected_status=status.HTTP_401_UNAUTHORIZED,
             expected_activation_status=True
         )
+
+
+@unittest.skipUnless(settings.ROOT_URLCONF == 'lms.urls', 'Account APIs are only supported in LMS')
+class TestAccountRetireMailings(TestCase):
+    """
+    Tests the account retire mailings endpoint.
+    """
+
+    def setUp(self):
+        super(TestAccountRetireMailings, self).setUp()
+        self.test_user = UserFactory()
+        self.test_superuser = SuperuserFactory()
+        self.test_service_user = UserFactory()
+
+        UserOrgTag.objects.create(user=self.test_user, key='email-optin', org="foo", value="True")
+        UserOrgTag.objects.create(user=self.test_user, key='email-optin', org="bar", value="True")
+
+        self.url = reverse('accounts_retire_mailings', kwargs={'username': self.test_user.username})
+
+    def build_jwt_headers(self, user):
+        """
+        Helper function for creating headers for the JWT authentication.
+        """
+        token = JwtBuilder(user).build_token([])
+        headers = {
+            'HTTP_AUTHORIZATION': 'JWT ' + token
+        }
+        return headers
+
+    def assert_status_and_tag_count(self, headers, expected_status=status.HTTP_200_OK, expected_tag_count=2,
+                                    expected_tag_value="False"):
+        """
+        Helper function for making a request to the retire subscriptions endpoint, and asserting the status.
+        """
+        response = self.client.post(self.url, **headers)
+        self.assertEqual(response.status_code, expected_status)
+
+        # Check that the expected number of tags with the correct value exist
+        tag_count = UserOrgTag.objects.filter(user=self.test_user, value=expected_tag_value).count()
+        self.assertEqual(tag_count, expected_tag_count)
+
+    def test_superuser_retires_user_subscriptions(self):
+        """
+        Verify a user's subscriptions are retired when a superuser posts to the retire subscriptions endpoint.
+        """
+        headers = self.build_jwt_headers(self.test_superuser)
+        self.assert_status_and_tag_count(headers, expected_status=status.HTTP_204_NO_CONTENT)
+
+    def test_superuser_retires_user_subscriptions_no_orgtags(self):
+        """
+        Verify the call succeeds when the user doesn't have any org tags.
+        """
+        UserOrgTag.objects.all().delete()
+        headers = self.build_jwt_headers(self.test_superuser)
+        self.assert_status_and_tag_count(headers, expected_status=status.HTTP_204_NO_CONTENT, expected_tag_count=0)
+
+    def test_user_with_permission_retires_user_subscriptions(self):
+        """
+        Verify a non-superuser with the correct permission can retire subscriptions.
+        """
+        user = UserFactory()
+        permission = PermissionFactory(
+            codename='can_retire_users',
+            content_type=ContentTypeFactory(
+                app_label='student'
+            )
+        )
+        user.user_permissions.add(permission)
+        headers = self.build_jwt_headers(user)
+        self.assert_status_and_tag_count(headers, expected_status=status.HTTP_204_NO_CONTENT)
+
+    def test_service_user_retires_user_subscriptions(self):
+        """
+        Verify a non-superuser with the correct permission can retire subscriptions.
+        """
+        with self.settings(RETIREMENT_SERVICE_WORKER_USERNAME=self.test_service_user.username):
+            headers = self.build_jwt_headers(self.test_service_user)
+            self.assert_status_and_tag_count(headers, expected_status=status.HTTP_204_NO_CONTENT)
+
+    def test_unauthorized_rejection(self):
+        """
+        Verify unauthorized users cannot retire subscriptions.
+        """
+        headers = self.build_jwt_headers(self.test_user)
+
+        # User should still have 2 "True" subscriptions.
+        self.assert_status_and_tag_count(headers, expected_status=status.HTTP_403_FORBIDDEN, expected_tag_value="True")
+
+    def test_on_jwt_headers_rejection(self):
+        """
+        Verify users who are not JWT authenticated are rejected.
+        """
+        self.assert_status_and_tag_count({}, expected_status=status.HTTP_401_UNAUTHORIZED, expected_tag_value="True")
+
+    def test_signal_failure(self):
+        """
+        Verify that if a signal throws an exception, we catch it and return a 500 with details
+        """
+        handler = MagicMock()
+        handler.side_effect = Exception
+        UserRetireMailingsSignal.connect(handler)
+
+        headers = self.build_jwt_headers(self.test_superuser)
+
+        try:
+            self.assert_status_and_tag_count(
+                headers,
+                expected_status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                expected_tag_value="True")
+            handler.assert_called_once_with(
+                signal=UserRetireMailingsSignal,
+                user=self.test_user,
+                sender=AccountRetireMailingsView)
+        finally:
+            UserRetireMailingsSignal.disconnect(handler)

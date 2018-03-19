@@ -3442,6 +3442,9 @@ COMPLETION_VIDEO_COMPLETE_PERCENTAGE = 0.95
 RATELIMIT_ENABLE = True
 RATELIMIT_RATE = '120/m'
 
+############### Settings for User Retirement #####################
+RETIREMENT_SERVICE_WORKER_USERNAME = 'RETIREMENT_SERVICE_USER'
+
 ############### Settings for django-fernet-fields ##################
 FERNET_KEYS = [
     'DUMMY KEY CHANGE BEFORE GOING TO PRODUCTION',
