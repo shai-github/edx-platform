@@ -168,7 +168,7 @@ class CourseOutlinePage(PageObject):
 
         # Click the subsection's first problem and ensure that the page finishes
         # reloading
-        unit_links[0].click()
+        units[0].click()
 
         self._wait_for_course_section(section_title, subsection_title)
 
@@ -263,27 +263,16 @@ class CourseOutlinePage(PageObject):
         
         return outline_dict
 
-    def _expand_all_outline_folds(self):
-        sections = [ section for section in self._get_sections_as_selenium_webelements() ]
-        for section in sections:
-            if not self._is_section_fold_expanded(section):
-                section.click()
-        
-        subsections = [ subsection for subsection in self._get_subsections_as_selenium_webelements() ]
-        for subsection in subsections:
-            if not self._is_subsection_fold_expanded(subsection):
-                subsection.click()
-    
     def _is_section_fold_expanded(self, section):
         section_button = section.find_element_by_css_selector('.section-name.accordion-trigger')
-        return self._is_element_aria_expanded(section_button)
+        return self._is_html_element_aria_expanded(section_button)
 
     def _is_subsection_fold_expanded(self, subsection):
         subsection_button = subsection.find_element_by_css_selector('.subsection-text.accordion-trigger')
-        return self._is_element_aria_expanded(subsection_button)
+        return self._is_html_element_aria_expanded(subsection_button)
     
     @staticmethod
-    def _is_element_aria_expanded(html_element):
+    def _is_html_element_aria_expanded(html_element):
         return html_element.get_attribute('aria-expanded') == u'true'
 
     @staticmethod
@@ -305,6 +294,18 @@ class CourseOutlinePage(PageObject):
     def _get_subsections_as_selenium_webelements(self):
         self._expand_all_outline_folds()
         return self.q(css=self._subsection_selector).results
+
+    def _expand_all_outline_folds(self):
+        sections = [ section for section in self.q(css=self._section_selector) ]
+        for section in sections:
+            if not self._is_section_fold_expanded(section):
+                section.click()
+        
+        subsections = [ subsection for subsection in self.q(css=self._subsection_selector) ]
+        for subsection in subsections:
+            if not self._is_subsection_fold_expanded(subsection):
+                subsection.click()
+    
 
 class CourseSearchResultsPage(CoursePage):
     """
