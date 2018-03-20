@@ -307,11 +307,10 @@ def check_transcripts(request):
             if len(html5_subs) == 2:  # check html5 transcripts for equality
                 transcripts_presence['html5_equal'] = json.loads(html5_subs[0]) == json.loads(html5_subs[1])
 
-        command, subs_to_use = _transcripts_logic(transcripts_presence, videos)
+        command, __ = _transcripts_logic(transcripts_presence, videos)
 
     transcripts_presence.update({
-        'command': command,
-        'subs': subs_to_use,
+        'command': command
     })
     return JsonResponse(transcripts_presence)
 
