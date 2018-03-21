@@ -24,7 +24,6 @@ class CourseHomePage(CoursePage):
     def is_browser_on_page(self):
         return self.q(css='.course-outline-visualprogress').present
 
-
     def __init__(self, browser, course_id):
         super(CourseHomePage, self).__init__(browser, course_id)
         self.course_id = course_id
@@ -107,7 +106,6 @@ class CourseOutlinePage(PageObject):
         """
         return self._get_outline_structure_as_dictionary()
 
-
     @property
     def num_sections(self):
         """
@@ -154,7 +152,7 @@ class CourseOutlinePage(PageObject):
             go_to_section("Week 1", "Lesson 1")
         """
         subsection_webelements = self._get_subsections_as_selenium_webelements()
-        subsection_titles = [ self._get_outline_element_title(sub_webel) for sub_webel in subsection_webelements ]
+        subsection_titles = [self._get_outline_element_title(sub_webel) for sub_webel in subsection_webelements]
 
         try:
             subsection_index = subsection_titles.index(unicode(subsection_title))
@@ -220,7 +218,7 @@ class CourseOutlinePage(PageObject):
         Return a list of all section titles on the page.
         """
         outline_sections = self._get_sections_as_selenium_webelements()
-        section_titles = [ self._get_outline_element_title(section) for section in outline_sections ]
+        section_titles = [self._get_outline_element_title(section) for section in outline_sections]
         return section_titles
 
     def _subsection_titles(self, section_index):
@@ -231,13 +229,14 @@ class CourseOutlinePage(PageObject):
         outline_sections = self._get_sections_as_selenium_webelements()
         target_section = outline_sections[section_index]
         target_subsections = self._get_subsections(target_section)
-        subsection_titles = [ self._get_outline_element_title(subsection)
-                              for subsection in target_subsections ]
-        return subsection_titles 
+        subsection_titles = [self._get_outline_element_title(subsection)
+                             for subsection in target_subsections]
+        return subsection_titles
 
     def _wait_for_course_section(self, section_title, subsection_title):
         """
-        Ensures the user navigates to the course content page with the correct section and subsection.
+        Ensures the user navigates to the course content page with the correct section and
+        subsection.
         """
         courseware_page = CoursewarePage(self.browser, self.parent_page.course_id)
         courseware_page.wait_for_page()
@@ -247,10 +246,12 @@ class CourseOutlinePage(PageObject):
             courseware_page.nav.visit_course_outline_page()
 
         self.wait_for(
-            promise_check_func=lambda: courseware_page.nav.is_on_section(section_title, subsection_title),
-            description="Waiting for course page with section '{0}' and subsection '{1}'".format(section_title, subsection_title)
+            promise_check_func=lambda: courseware_page.nav.is_on_section(
+                section_title, subsection_title),
+            description="Waiting for course page with section '{0}' and subsection '{1}'".format(
+                section_title, subsection_title)
         )
-    
+
     def _get_outline_structure_as_dictionary(self):
         outline_dict = OrderedDict()
         outline_sections = self._get_sections_as_selenium_webelements()
@@ -258,9 +259,9 @@ class CourseOutlinePage(PageObject):
         for section in outline_sections:
             subsections = self._get_subsections(section)
             section_title = self._get_outline_element_title(section)
-            subsection_titles = [ self._get_outline_element_title(subsection) for subsection in subsections ]
+            subsection_titles = [self._get_outline_element_title(subsection)
+                                 for subsection in subsections]
             outline_dict[section_title] = subsection_titles
-        
         return outline_dict
 
     def _is_section_fold_expanded(self, section):
@@ -268,9 +269,10 @@ class CourseOutlinePage(PageObject):
         return self._is_html_element_aria_expanded(section_button)
 
     def _is_subsection_fold_expanded(self, subsection):
-        subsection_button = subsection.find_element_by_css_selector('.subsection-text.accordion-trigger')
+        subsection_button = subsection.find_element_by_css_selector(
+            '.subsection-text.accordion-trigger')
         return self._is_html_element_aria_expanded(subsection_button)
-    
+
     @staticmethod
     def _is_html_element_aria_expanded(html_element):
         return html_element.get_attribute('aria-expanded') == u'true'
@@ -296,16 +298,15 @@ class CourseOutlinePage(PageObject):
         return self.q(css=self._subsection_selector).results
 
     def _expand_all_outline_folds(self):
-        sections = [ section for section in self.q(css=self._section_selector) ]
+        sections = [section for section in self.q(css=self._section_selector)]
         for section in sections:
             if not self._is_section_fold_expanded(section):
                 section.click()
-        
-        subsections = [ subsection for subsection in self.q(css=self._subsection_selector) ]
+
+        subsections = [subsection for subsection in self.q(css=self._subsection_selector)]
         for subsection in subsections:
             if not self._is_subsection_fold_expanded(subsection):
                 subsection.click()
-    
 
 class CourseSearchResultsPage(CoursePage):
     """
